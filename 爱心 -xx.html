@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"/>
+  <title>爱心粒子 + 樱花拓展版</title>
+  <style>
+    /* 全屏黑底，取消滚动条 */
+    *{margin:0;padding:0;box-sizing:border-box}
+    html,body{height:100%;background:#000;overflow:hidden}
+    /* 提示文字 */
+    .tip{position:fixed;left:50%;bottom:15px;transform:translateX(-50%);color:#ccc;font-size:14px}
+  </style>
+</head>
+<script>
+/* ===== 让粒子画布重新抢到鼠标事件 ===== */
+$(function(){
+  // 1. 把樱花画布设为“只渲染不拦截”
+  $('#jsi-cherry-container canvas').css('pointer-events:none','none');
+  // 2. 给爱心画布再绑一次事件（保险）
+  const can = document.getElementById('pinkboard');
+  can.addEventListener('mousemove',e=>{
+    spawnAt(e.offsetX,e.offsetY,5);
+  });
+  can.addEventListener('click',e=>{
+    spawnAt(e.offsetX,e.offsetY,60);
+  });
+});
+</script>
+
+<!-- =========================  樱花拓展  ========================= -->
+
+<!-- ===== 樱花飘落（持续版） ===== -->
+<script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script>
+<script>
+$(function () {
+  /************  配置  ************/
+  const SAKURA = {
+    MAX      : 60,           // 同时存在枝条数
+    INTERVAL : 800,          // 多久放一条（ms）
+    FAR      : 800,          // 最远 Z 轴
+    SURFACE  : 0.5,          // 消失高度系数
+    WIND     : 0.4,          // 风力
+    FOCUS    : 300           // 透视焦点
+  };
+
+  /************  初始化  ************/
+  const $con = $('#jsi-cherry-container');
+  if (!$con.length) {
+    $('body').append('<div id="jsi-cherry-container" style="position:fixed;inset:0;pointer-events:none;z-index:1"></div>');
+  }
+  const canvas = $('<canvas>').attr({width: $con.width(), height: $con.height()})
+                              .css({position:'absolute',inset:0})
+                              .appendTo($con)[0];
+  const ctx    = canvas.getContext('2d');
+  const list   = [];
+
+  /************  枝条类  ************/
+  class Branch {
+    constructor() {
+      this.x  = Math.random() * canvas.width;
+      this.y  = canvas.height + 20;
+      this.z  = Math.random() * SAKURA.FAR;
+      this.vx = (Math.random() - 0.5) * 2;
+      this.vy = -0.5 - Math.random() * 1.5;
+      this.vz = -0.5 - Math.random();
+      this.petals = Array.from({length:5},()=>({
+        angle : Math.random() * Math.PI * 2,
+        speed : 0.02 + Math.random() * 0.03,
+        size  : 8 + Math.random() * 6,
+        yOff  : Math.random() * 60 - 30
+      }));
+    }
+    project() {
+      const rate = SAKURA.FOCUS / (this.z + SAKURA.FOCUS);
+      return {rate, x: canvas.width/2  + (this.x - canvas.width/2)  * rate,
+                    y: canvas.height/2 - (this.y + this.petals[0].yOff) * rate,
+                    s: rate};
+    }
+    update() {
+      this.x += this.vx + SAKURA.WIND;
+      this.y += this.vy;
+      this.z += this.vz;
+      this.petals.forEach(p=> p.angle += p.speed);
+      return this.z > -SAKURA.FOCUS && this.z < SAKURA.FAR &&
+             this.y > -canvas.height * SAKURA.SURFACE;
+    }
+    draw() {
+      const p = this.project();
+      this.petals.forEach(pt=>{
+        ctx.save();
+        ctx.translate(p.x, p.y + pt.yOff * p.s);
+        ctx.rotate(pt.angle);
+        ctx.scale(p.s, p.s);
+        ctx.fillStyle = 'rgba(255,182,193,0.8)';
+        ctx.beginPath();
+        ctx.ellipse(0,0, pt.size, pt.size*0.6, 0, 0, Math.PI*2);
+        ctx.fill();
+        ctx.restore();
+      });
+    }
+  }
+
+  /************  持续生产  ************/
+  setInterval(()=>{
+    if (list.length < SAKURA.MAX) list.push(new Branch());
+  }, SAKURA.INTERVAL);
+
+  /************  持续绘制  ************/
+  function loop() {
+    requestAnimationFrame(loop);
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    for (let i=list.length-1;i>=0;--i){
+      const b = list[i];
+      if (b.update()) b.draw(); else list.splice(i,1);
+    }
+  }
+  loop();
+
+  /************  窗口大小变化  ************/
+  $(window).on('resize',()=>{
+    canvas.width  = $con.width();
+    canvas.height = $con.height();
+  });
+});
+</script>
+
+<body>
+  <!-- 背景图 & BGM -->
+  <img id="bg" src="123.jpg" style="position:absolute;width:100%;height:100%;object-fit:cover;opacity:.3">
+  <audio id="bgm" autoplay loop src="renxi.mp3"></audio>
+
+  <!-- 1. 爱心粒子画布 -->
+  <canvas id="pinkboard"></canvas>
+  <!-- 2. 樱花画布由 JS 动态插入 -->
+
+  <div class="tip">移动鼠标 / 点击屏幕可生成额外粒子 ♥</div>
+
+<script>
+/* ==========================  配置区  ========================== */
+const CONFIG = {
+  particleMax: 600,        // 最大并发粒子数
+  lifeTime  : 2,           // 单粒子生命周期（秒）
+  velocity  : 100,         // 初始速度（px/s）
+  effect    : -0.75,       // 加速度系数（负值表示向内吸引）
+  size      : 30,          // 贴图尺寸（像素）
+  heartColor: '#ea80b0',   // 心形填充色
+  bgmVolume : 0.3          // 背景音乐音量
+};
+
+/* ==========================  工具类  ========================== */
+// 二维向量
+class Point {
+  constructor(x = 0, y = 0) { this.x = x; this.y = y; }
+  clone() { return new Point(this.x, this.y); }
+  length(len) {
+    const l = Math.hypot(this.x, this.y);
+    if (len === undefined) return l;
+    this.x = (this.x / l) * len;
+    this.y = (this.y / l) * len;
+    return this;
+  }
+}
+
+// 参数化心形方程  -PI <= t <= PI
+function pointOnHeart(t) {
+  return new Point(
+    160 * Math.pow(Math.sin(t), 3),
+    130 * Math.cos(t) - 50 * Math.cos(2 * t) - 20 * Math.cos(3 * t) - 10 * Math.cos(4 * t) + 25
+  );
+}
+
+/* ==========================  粒子类  ========================== */
+class Particle {
+  constructor() {
+    this.pos = new Point();
+    this.vel = new Point();
+    this.acc = new Point();
+    this.age = 0;
+  }
+  init(x, y, dx, dy) {
+    this.pos.x = x; this.pos.y = y;
+    this.vel.x = dx; this.vel.y = dy;
+    this.acc.x = dx * CONFIG.effect;
+    this.acc.y = dy * CONFIG.effect;
+    this.age = 0;
+  }
+  update(dt) {
+    this.pos.x += this.vel.x * dt;
+    this.pos.y += this.vel.y * dt;
+    this.vel.x += this.acc.x * dt;
+    this.vel.y += this.acc.y * dt;
+    this.age += dt;
+  }
+  draw(ctx, img) {
+    // ease 函数：先快后慢
+    const ease = t => --t * t * t + 1;
+    const s = img.width * ease(this.age / CONFIG.lifeTime);
+    ctx.globalAlpha = 1 - this.age / CONFIG.lifeTime;
+    ctx.drawImage(img, this.pos.x - s / 2, this.pos.y - s / 2, s, s);
+  }
+}
+
+/* ==========================  对象池  ========================== */
+class ParticlePool {
+  constructor(length) {
+    this.list = Array.from({ length }, () => new Particle());
+    this.firstActive = 0;
+    this.firstFree  = 0;
+    this.duration   = CONFIG.lifeTime;
+  }
+  add(x, y, dx, dy) {
+    this.list[this.firstFree].init(x, y, dx, dy);
+    this.firstFree = (this.firstFree + 1) % this.list.length;
+    if (this.firstActive === this.firstFree) {
+      this.firstActive = (this.firstActive + 1) % this.list.length;
+    }
+  }
+  update(dt) {
+    // 更新所有活跃粒子
+    let i;
+    if (this.firstActive < this.firstFree) {
+      for (i = this.firstActive; i < this.firstFree; i++) this.list[i].update(dt);
+    } else {
+      for (i = this.firstActive; i < this.list.length; i++) this.list[i].update(dt);
+      for (i = 0; i < this.firstFree; i++) this.list[i].update(dt);
+    }
+    // 回收过期粒子
+    while (this.list[this.firstActive].age >= this.duration && this.firstActive !== this.firstFree) {
+      this.firstActive = (this.firstActive + 1) % this.list.length;
+    }
+  }
+  draw(ctx, img) {
+    if (this.firstActive < this.firstFree) {
+      for (let i = this.firstActive; i < this.firstFree; i++) this.list[i].draw(ctx, img);
+    } else {
+      for (let i = this.firstActive; i < this.list.length; i++) this.list[i].draw(ctx, img);
+      for (let i = 0; i < this.firstFree; i++) this.list[i].draw(ctx, img);
+    }
+  }
+}
+
+
+
+
+/* ==========================  主循环  ========================== */
+(function main() {
+  const canvas = document.getElementById('pinkboard');
+  const ctx    = canvas.getContext('2d');
+  const pool   = new ParticlePool(CONFIG.particleMax);
+  const rate   = CONFIG.particleMax / CONFIG.lifeTime; // 每秒生成个数
+
+  let lastTime = 0;
+
+  // 预渲染心形贴图
+  const heartImg = (() => {
+    const c = document.createElement('canvas');
+    c.width = c.height = CONFIG.size;
+    const cx = c.getContext('2d');
+    const scale = CONFIG.size / 350;
+    cx.beginPath();
+    for (let t = -Math.PI; t <= Math.PI; t += 0.02) {
+      const p = pointOnHeart(t);
+      const x = CONFIG.size / 2 + p.x * scale;
+      const y = CONFIG.size / 2 - p.y * scale;
+      t === -Math.PI ? cx.moveTo(x, y) : cx.lineTo(x, y);
+    }
+    cx.closePath();
+    cx.fillStyle = CONFIG.heartColor;
+    cx.fill();
+    const img = new Image();
+    img.src = c.toDataURL();
+    return img;
+  })();
+
+  function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // 鼠标/触摸交互：在光标处爆发生命力
+  function spawnAt(x, y, burst = 30) {
+    for (let i = 0; i < burst; i++) {
+      const rad = Math.PI * 2 * Math.random();
+      const spd = 80 + Math.random() * 120;
+      const vx  = Math.cos(rad) * spd;
+      const vy  = Math.sin(rad) * spd;
+      pool.add(x, y, vx, vy);
+    }
+  }
+  canvas.addEventListener('mousemove', e => spawnAt(e.offsetX, e.offsetY, 5));
+  canvas.addEventListener('click', e => spawnAt(e.offsetX, e.offsetY, 60));
+
+  // 主渲染
+  function render(ts) {
+    requestAnimationFrame(render);
+    const dt = Math.min((ts - lastTime) / 1000, 0.033); // 限帧防止 tab 切换爆炸
+    lastTime = ts;
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // 按固定速率自动生产
+    const needed = rate * dt;
+    for (let i = 0; i < needed; i++) {
+      const t = Math.PI - 2 * Math.PI * Math.random();
+      const pos = pointOnHeart(t);
+      const dir = pos.clone().length(CONFIG.velocity);
+      pool.add(canvas.width / 2 + pos.x, canvas.height / 2 - pos.y, dir.x, -dir.y);
+    }
+
+    pool.update(dt);
+    pool.draw(ctx, heartImg);
+  }
+  requestAnimationFrame(render);
+
+  // 背景音乐音量
+  const bgm = document.getElementById('bgm');
+  bgm.volume = CONFIG.bgmVolume;
+})();
+</script>
+
+
+</body>
+</html>
